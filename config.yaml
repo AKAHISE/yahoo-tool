@@ -1,0 +1,21 @@
+credentials:
+  usernames:
+    testuser:
+      email: test@example.com
+      name: Test User
+      # パスワード「abc123」のハッシュ値（暗号化されたもの）です
+      password: $2b$12$qKw6TIa/LTxJnPk5hom.Remskarzg.5gIA3IpKCnxJZG6W1Uq5NxS
+    admin:
+      email: admin@example.com
+      name: Administrator
+      # パスワード「admin123」のハッシュ値
+      password: $2b$12$rMeWZtAVcGHLEQmLo7/uie1/Q.P/k/C0n/g/P/w/w/w/w/w/w/w/w
+
+cookie:
+  expiry_days: 30
+  key: random_signature_key
+  name: random_cookie_name
+
+preauthorized:
+  emails:
+  - melsby@gmail.com
