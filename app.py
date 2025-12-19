@@ -1,36 +1,34 @@
 import streamlit as st
 
-# ページ設定
-st.set_page_config(page_title="Yahoo Tool", page_icon="🛍️")
+# 1. ページ設定（一番最初に書く必要があります）
+st.set_page_config(page_title="Yahoo Tool", layout="centered")
 
-# ログイン機能
+# 2. ログインチェック機能
 def check_password():
-    def password_guessed():
-        # Secretsからユーザー名とパスワードを照合
-        if (st.session_state["username"] == st.secrets["auth"]["username"] and
-            st.session_state["password"] == st.secrets["auth"]["password"]):
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # セキュリティのため削除
-            del st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
-
     if "password_correct" not in st.session_state:
-        # 初回表示
-        st.text_input("Username", key="username")
-        st.text_input("Password", type="password", key="password")
-        if st.button("Log in"):
-            password_guessed()
-            if not st.session_state.get("password_correct", False):
-                st.error("😕 ユーザー名またはパスワードが違います")
-                st.stop()
-            st.rerun()
-        return False
-    else:
+        st.session_state["password_correct"] = False
+
+    if st.session_state["password_correct"]:
         return True
 
-# ログイン後のメイン画面
+    st.title("🔐 ログイン")
+    user = st.text_input("Username")
+    pw = st.text_input("Password", type="password")
+    
+    if st.button("Log in"):
+        if user == st.secrets["auth"]["username"] and pw == st.secrets["auth"]["password"]:
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("😕 ユーザー名またはパスワードが違います")
+    return False
+
+# 3. メイン画面
 if check_password():
-    st.title("✅ Yahooツールへようこそ")
-    st.success("ログインに成功しました！アプリは正常に稼働しています。")
-    st.write("ここから自動化ツールを構築していきましょう。")
+    st.title("🛍️ Yahooツール（準備完了）")
+    st.success("ログインに成功しました！")
+    st.info("ここから以前の『allintitle』や『知恵袋』の機能を1つずつ戻していきます。")
+    
+    # 動作確認用のテストボタン
+    if st.button("現在の状態をテスト"):
+        st.write("システムは正常に反応しています。")
