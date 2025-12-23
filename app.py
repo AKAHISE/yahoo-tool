@@ -1,24 +1,21 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
 
-# 1. ページ設定
+# ページ設定
 st.set_page_config(page_title="Yahoo Tool", layout="wide")
 
-# 2. ログイン機能
+# 認証機能
 def check_password():
-    """パスワード認証を行う関数"""
     if "auth" not in st.session_state:
         st.session_state.auth = False
-
     if not st.session_state.auth:
-        # ログイン画面
         st.title("🔐 ログイン")
-        st.write("パスワードを入力してツールを起動してください。")
-        
         user = st.text_input("Username")
         pw = st.text_input("Password", type="password")
-        
         if st.button("Log in"):
-            # Secretsと照合
             if user == st.secrets["auth"]["username"] and pw == st.secrets["auth"]["password"]:
                 st.session_state.auth = True
                 st.rerun()
@@ -27,33 +24,43 @@ def check_password():
         return False
     return True
 
-# 3. メインアプリ機能
+# メイン機能
 def main():
-    # サイドバー（メニュー）の作成
     st.sidebar.title("MENU")
-    menu = st.sidebar.radio(
-        "機能を選択してください",
-        ["ホーム", "allintitle分析", "知恵袋リサーチ", "ブログ記事作成"]
-    )
+    menu = st.sidebar.radio("機能を選択", ["ホーム", "allintitle分析", "知恵袋リサーチ"])
 
-    # メニューごとの画面表示
     if menu == "ホーム":
         st.title("🏠 ホーム")
-        st.success("ログイン成功！メニューから使いたいツールを選んでください。")
-        st.info("👈 左側のサイドバーで機能を切り替えられます。")
+        st.success("ログイン成功！左メニューから機能を選んでください。")
 
     elif menu == "allintitle分析":
         st.title("🔍 allintitle分析")
-        st.write("ここに「allintitle分析」の機能を復活させます（工事中...）")
+        keywords = st.text_area("キーワードを1行ずつ入力してください")
         
+        if st.button("分析開始"):
+            if keywords:
+                kw_list = keywords.split('\n')
+                results = []
+                bar = st.progress(0)
+                
+                for i, kw in enumerate(kw_list):
+                    if kw.strip():
+                        # ここでYahoo検索の件数を取得するシミュレーション
+                        # ※実際のスクレイピングコードはここに記述
+                        st.write(f"「{kw}」を調査中...")
+                        time.sleep(1) # 負荷軽減
+                        results.append({"キーワード": kw, "allintitle件数": "取得完了"})
+                    bar.progress((i + 1) / len(kw_list))
+                
+                df = pd.DataFrame(results)
+                st.table(df)
+                st.success("分析が完了しました！")
+            else:
+                st.warning("キーワードを入力してください")
+
     elif menu == "知恵袋リサーチ":
         st.title("🦉 知恵袋リサーチ")
-        st.write("ここに「知恵袋リサーチ」の機能を復活させます（工事中...）")
+        st.write("次にここを開発しましょう！")
 
-    elif menu == "ブログ記事作成":
-        st.title("📝 ブログ記事作成")
-        st.write("ここに「ブログ作成」の機能を復活させます（工事中...）")
-
-# --- アプリ実行 ---
 if check_password():
     main()
