@@ -2,5 +2,3 @@ streamlit
 pandas
 selenium
 webdriver-manager
-pyyaml
-streamlit-authenticator
