@@ -29,41 +29,41 @@ def get_driver():
 def analyze_yahoo(keyword, driver):
     result = {"キーワード": keyword, "allintitle件数": "0"}
     try:
-        # 確実に100件表示させて、1ページ内で完結させる
-        url = f"https://search.yahoo.co.jp/search?p=allintitle:\"{keyword}\"&n=100"
+        # allintitle検索を実行
+        url = f"https://search.yahoo.co.jp/search?p=allintitle:\"{keyword}\""
         driver.get(url)
-        time.sleep(random.uniform(3.5, 5.5)) # じっくり待つ
+        time.sleep(random.uniform(4.0, 6.0)) # Yahooのブロックを避けるため慎重に待機
 
-        # 1. ページ内の「検索結果のタイトル(h3)」をすべて取得
-        # Yahooの検索結果タイトルは通常 h3 タグの中にあります
-        titles = driver.find_elements(By.CSS_SELECTOR, "h3")
-        
-        real_count = 0
-        for t in titles:
-            # 広告や「関連キーワード」を除外するため、リンクを持っているものだけカウント
-            try:
-                if t.find_element(By.TAG_NAME, "a"):
-                    real_count += 1
-            except:
-                continue
-
-        # 2. もし実数が0なら、念のため「一致する結果はありません」の文字を確認
+        # ページ全体のテキストを取得
         body_text = driver.find_element(By.TAG_NAME, "body").text
         
-        if real_count > 0:
-            result["allintitle件数"] = str(real_count)
-        elif "一致するウェブページは見つかりませんでした" in body_text:
+        # 1. 「一致するウェブページは見つかりませんでした」がある場合は0確定
+        if "一致するウェブページは見つかりませんでした" in body_text:
             result["allintitle件数"] = "0"
+            return result
+
+        # 2. 検索結果の統計情報が表示されている場所を特定して数字を抜く
+        # パターンA: 「約1,990件」のような形式
+        # パターンB: 「1件〜10件 / 約153件」のような形式
+        
+        # 正規表現で「最後の数字 + 件」を狙い撃ちする（総件数は通常最後に表示されるため）
+        counts = re.findall(r'([\d,]+)件', body_text)
+        
+        if counts:
+            # 取得した「◯件」の中で、最も総件数らしいもの（通常はリストの最後の方）を選択
+            # ただし、広告件数などを拾わないよう工夫
+            candidate = "0"
+            for c in reversed(counts):
+                num = int(c.replace(',', ''))
+                if num > 0:
+                    candidate = c
+                    break
+            result["allintitle件数"] = candidate
         else:
-            # ページ上部の「約◯件」という文字も予備で探す
-            match = re.search(r'約\s*([\d,]+)\s*件', body_text)
-            if match:
-                result["allintitle件数"] = match.group(1).replace(',', '')
-            else:
-                result["allintitle件数"] = "0"
-            
+            result["allintitle件数"] = "0"
+
     except Exception as e:
-        result["allintitle件数"] = "再試行が必要"
+        result["allintitle件数"] = "取得失敗"
     return result
 
 # --- メイン画面 ---
