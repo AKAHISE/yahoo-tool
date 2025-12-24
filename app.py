@@ -25,29 +25,45 @@ def get_driver():
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
-# --- 解析ロジック ---
+# --- 解析ロジック (超高精度・実数カウント版) ---
 def analyze_yahoo(keyword, driver):
     result = {"キーワード": keyword, "allintitle件数": "0"}
     try:
-        # Yahoo検索（allintitle）
-        url = f"https://search.yahoo.co.jp/search?p=allintitle:\"{keyword}\""
+        # 確実に100件表示させて、1ページ内で完結させる
+        url = f"https://search.yahoo.co.jp/search?p=allintitle:\"{keyword}\"&n=100"
         driver.get(url)
-        time.sleep(random.uniform(3.0, 5.0)) # 慎重に待機
+        time.sleep(random.uniform(3.5, 5.5)) # じっくり待つ
 
+        # 1. ページ内の「検索結果のタイトル(h3)」をすべて取得
+        # Yahooの検索結果タイトルは通常 h3 タグの中にあります
+        titles = driver.find_elements(By.CSS_SELECTOR, "h3")
+        
+        real_count = 0
+        for t in titles:
+            # 広告や「関連キーワード」を除外するため、リンクを持っているものだけカウント
+            try:
+                if t.find_element(By.TAG_NAME, "a"):
+                    real_count += 1
+            except:
+                continue
+
+        # 2. もし実数が0なら、念のため「一致する結果はありません」の文字を確認
         body_text = driver.find_element(By.TAG_NAME, "body").text
         
-        # 件数を抽出する正規表現
-        match = re.search(r'([\d,]+)\s*件', body_text)
-        if match:
-            count = match.group(1).replace(',', '')
-            result["allintitle件数"] = count
+        if real_count > 0:
+            result["allintitle件数"] = str(real_count)
         elif "一致するウェブページは見つかりませんでした" in body_text:
             result["allintitle件数"] = "0"
         else:
-            result["allintitle件数"] = "0 (表示なし)"
+            # ページ上部の「約◯件」という文字も予備で探す
+            match = re.search(r'約\s*([\d,]+)\s*件', body_text)
+            if match:
+                result["allintitle件数"] = match.group(1).replace(',', '')
+            else:
+                result["allintitle件数"] = "0"
             
     except Exception as e:
-        result["allintitle件数"] = "取得失敗"
+        result["allintitle件数"] = "再試行が必要"
     return result
 
 # --- メイン画面 ---
