@@ -171,8 +171,10 @@ def analyze_yahoo(keyword, driver):
 
         valid_count = 0
 
+                valid_count = 0
+
         for card in cards:
-            if valid_count >= TOP_N:   # ★TOP_Nを使う
+            if valid_count >= TOP_N:
                 break
 
             try:
@@ -185,6 +187,7 @@ def analyze_yahoo(keyword, driver):
                 if "広告" in card_text or "スポンサー" in card_text or "Sponsored" in card_text:
                     continue
 
+                # タイトルリンク取得
                 try:
                     title_link = card.find_element(By.CSS_SELECTOR, "h3 a")
                 except:
@@ -192,6 +195,40 @@ def analyze_yahoo(keyword, driver):
                         title_link = card.find_element(By.CSS_SELECTOR, "a")
                     except:
                         continue
+
+                raw_href = title_link.get_attribute("href")
+                title_text = (title_link.text or "").strip().replace("\n", "")
+
+                if not raw_href:
+                    continue
+
+                url = _extract_real_url(raw_href)
+                if not url.startswith("http"):
+                    continue
+
+                host = _normalize_host(url)
+
+                # 除外（hostベース）
+                if _host_matches(host, EXCLUDE_DOMAINS):
+                    continue
+
+                valid_count += 1
+
+                detected_qa = _host_matches(host, QA_DOMAINS) or ("Yahoo!知恵袋" in card_text)
+                detected_blog = _host_matches(host, BLOG_DOMAINS)
+
+                if detected_qa:
+                    result["qa_flag"] = True
+                if detected_blog:
+                    result["blog_flag"] = True
+
+                result["debug_titles"].append(
+                    f"【{valid_count}位】{title_text[:30]} ({host})"
+                )
+
+            except:
+                continue
+
 
                 raw_href = title_link.get_attribute("href")
                 title_text = (title_link.text or "").strip().replace("\n", "")
