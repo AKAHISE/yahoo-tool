@@ -6,6 +6,28 @@ import random
 import re
 from urllib.parse import unquote, urlparse, parse_qs
 
+def load_cfg(path="config.yaml"):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+CFG = load_cfg()
+
+RULES = (CFG.get("rules") or {})
+SEARCH = ((CFG.get("search") or {}).get("yahoo") or {})
+
+QA_DOMAINS = RULES.get("qa_domains", ["detail.chiebukuro.yahoo.co.jp"])
+BLOG_DOMAINS = RULES.get("blog_domains", ["ameblo.jp","hatenablog.com","hatenablog.jp","hatena.blog","note.com","note.mu"])
+EXCLUDE_DOMAINS = RULES.get("exclude_domains", ["search.yahoo.co.jp","help.yahoo.co.jp"])
+
+TOP_N = int(SEARCH.get("top_n", 10))
+SLEEP_MIN = float(SEARCH.get("sleep_min", 0.6))
+SLEEP_MAX = float(SEARCH.get("sleep_max", 1.2))
+ALLINTITLE_N = int(SEARCH.get("allintitle_n", 100))
+
+
 # --- Selenium関連 ---
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
