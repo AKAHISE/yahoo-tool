@@ -3,12 +3,10 @@ credentials:
     testuser:
       email: test@example.com
       name: Test User
-      # パスワード「abc123」のハッシュ値（暗号化されたもの）です
       password: $2b$12$qKw6TIa/LTxJnPk5hom.Remskarzg.5gIA3IpKCnxJZG6W1Uq5NxS
     admin:
       email: admin@example.com
       name: Administrator
-      # パスワード「admin123」のハッシュ値
       password: $2b$12$rMeWZtAVcGHLEQmLo7/uie1/Q.P/k/C0n/g/P/w/w/w/w/w/w/w/w
 
 cookie:
@@ -18,4 +16,35 @@ cookie:
 
 preauthorized:
   emails:
-  - melsby@gmail.com
+    - melsby@gmail.com
+
+# ★ここから追加（精度改善の心臓部）
+rules:
+  qa_domains:
+    - detail.chiebukuro.yahoo.co.jp
+
+  blog_domains:
+    - ameblo.jp
+    - hatenablog.com
+    - hatenablog.jp
+    - hatena.blog
+    - note.com
+    - note.mu
+    # よく使う無料ブログ（必要なら追加）
+    - blog.fc2.com
+    - livedoor.blog
+    - seesaa.net
+    - wordpress.com
+    - blogger.com
+
+  # 検索結果から除外したいドメイン（必要なら）
+  exclude_domains:
+    - search.yahoo.co.jp
+    - help.yahoo.co.jp
+
+search:
+  yahoo:
+    top_n: 10
+    sleep_min: 0.6
+    sleep_max: 1.2
+    allintitle_n: 100
