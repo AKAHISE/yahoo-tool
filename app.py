@@ -27,10 +27,6 @@ CFG = load_cfg()
 RULES = (CFG.get("rules") or {})
 SEARCH = ((CFG.get("search") or {}).get("yahoo") or {})
 
-QA_DOMAINS = RULES.get("qa_domains", ["detail.chiebukuro.yahoo.co.jp"])
-BLOG_DOMAINS = RULES.get("blog_domains", ["ameblo.jp", "hatenablog.com", "hatenablog.jp", "hatena.blog", "note.com", "note.mu"])
-EXCLUDE_DOMAINS = RULES.get("exclude_domains", ["search.yahoo.co.jp", "help.yahoo.co.jp"])
-
 TOP_N = int(SEARCH.get("top_n", 10))
 SLEEP_MIN = float(SEARCH.get("sleep_min", 0.6))
 SLEEP_MAX = float(SEARCH.get("sleep_max", 1.2))
