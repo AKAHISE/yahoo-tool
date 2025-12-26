@@ -13,7 +13,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 # --- 設定: 監視ターゲット ---
-QA_DOMAINS = ["detail.chiebukuro.yahoo.co.jp"]
+# 無料ブログリスト
 BLOG_DOMAINS = [
     "ameblo.jp", 
     "hatenablog.com", "hatenablog.jp", "hatena.blog",
@@ -29,7 +29,7 @@ def get_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1280,1080")
     
-    # ★重要：ローカルPCと同じ「Mac」として振る舞う設定
+    # ローカルPCと同じ「Mac」として振る舞う設定
     options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     service = Service(executable_path="/usr/bin/chromedriver")
@@ -55,11 +55,9 @@ def analyze_yahoo(keyword, driver):
         # ---------------------------------------------------------
         
         # キーワードをスペースで分解して、それぞれに intitle: をつける
-        # 例: "消臭剤 併用" → "intitle:消臭剤 intitle:併用"
         parts = keyword.replace("　", " ").split()
         intitle_query = " ".join([f"intitle:{p}" for p in parts if p.strip()])
         
-        # Yahoo検索へGO
         driver.get(f"https://search.yahoo.co.jp/search?p={intitle_query}&n=10")
         time.sleep(random.uniform(2.5, 4.0))
         
@@ -68,15 +66,12 @@ def analyze_yahoo(keyword, driver):
         # 【判定A】「一致する情報は...」のメッセージがあれば 0件確定
         if "一致する情報は" in body_text and "見つかりませんでした" in body_text:
             result["allintitle"] = "0"
-            
         else:
             # 【判定B】「約 1件」などの数字を探す
-            # 画像の場所（ページ上部）にある数字を狙います
             match = re.search(r'約\s*([\d,]+)\s*件', body_text)
             if match:
                 result["allintitle"] = match.group(1).replace(',', '')
             else:
-                # 「約」がない場合の数字（「1件」など）も探す
                 match_strict = re.search(r'([\d,]+)\s*件', body_text)
                 if match_strict:
                     result["allintitle"] = match_strict.group(1).replace(',', '')
@@ -105,9 +100,7 @@ def analyze_yahoo(keyword, driver):
                 title_links = card.find_elements(By.CSS_SELECTOR, "a")
                 if not title_links: continue
                 
-                # 最もそれらしいリンクを採用
                 target_link = title_links[0]
-                # h3タグの中にあるリンクを優先する
                 h3_link = card.find_elements(By.CSS_SELECTOR, "h3 a")
                 if h3_link: target_link = h3_link[0]
 
@@ -121,16 +114,18 @@ def analyze_yahoo(keyword, driver):
                 if "http" in url:
                     valid_count += 1
                     
-                    # 知恵袋チェック
-                    if "chiebukuro.yahoo.co.jp" in url or "Yahoo!知恵袋" in text:
+                    # ---------------------------------------------------
+                    # ★【修正】知恵袋チェック（URLのみを厳格にチェック）
+                    # ---------------------------------------------------
+                    if "chiebukuro" in url:
                         result["qa_flag"] = True
                     
                     # ブログチェック
                     for blog in BLOG_DOMAINS:
                         if blog in url: result["blog_flag"] = True
                     
-                    # ログ保存（確認用）
-                    result["debug_titles"].append(f"{valid_count}. {text[:15]}...")
+                    # ログ保存（URLも表示して確認しやすくする）
+                    result["debug_titles"].append(f"{valid_count}. {text[:10]}... ({url[:20]}...)")
                     
             except: continue
             if valid_count >= 10: break
@@ -156,8 +151,7 @@ def main():
                 st.rerun()
         return
 
-    st.title("🔍 Yahoo! 徹底攻略ツール (完全再現版)")
-    st.info("intitle:A intitle:B 方式で正確な件数を取得します")
+    st.title("🔍 Yahoo! 徹底攻略ツール (知恵袋判定強化版)")
     
     raw_text = st.text_area("キーワード入力", height=200)
     target_list = [line.strip() for line in raw_text.split('\n') if line.strip()]
@@ -191,6 +185,10 @@ def main():
                 df[['keyword', 'allintitle', '知恵袋', '無料ブログ']],
                 use_container_width=True
             )
+            
+            # デバッグ用：どんなURLを拾っているか確認
+            with st.expander("詳細ログ（URL確認用）"):
+                st.write(df[['keyword', 'debug_titles']])
             
         finally:
             if 'driver' in locals(): driver.quit()
