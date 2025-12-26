@@ -1,38 +1,24 @@
-import yaml
 import streamlit as st
 import pandas as pd
 import time
 import random
 import re
-from urllib.parse import unquote, urlparse, parse_qs
+from urllib.parse import unquote
+import os
 
 # --- Selenium関連 ---
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
-
-# ========= config.yaml 読み込み =========
-def load_cfg(path="config.yaml"):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except Exception:
-        return {}
-
-CFG = load_cfg()
-RULES = (CFG.get("rules") or {})
-SEARCH = ((CFG.get("search") or {}).get("yahoo") or {})
-
-TOP_N = int(SEARCH.get("top_n", 10))
-SLEEP_MIN = float(SEARCH.get("sleep_min", 0.6))
-SLEEP_MAX = float(SEARCH.get("sleep_max", 1.2))
-ALLINTITLE_N = int(SEARCH.get("allintitle_n", 100))
-# ======================================
-
+# --- 設定: 監視ターゲット ---
+QA_DOMAINS = ["detail.chiebukuro.yahoo.co.jp"]
+BLOG_DOMAINS = [
+    "ameblo.jp", 
+    "hatenablog.com", "hatenablog.jp", "hatena.blog",
+    "note.com", "note.mu"
+]
 
 # --- ブラウザ設定（Mac偽装・クラウド対応版） ---
 def get_driver():
@@ -42,205 +28,172 @@ def get_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1280,1080")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
-
+    
+    # ★重要：ローカルPCと同じ「Mac」として振る舞う設定
+    options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
     service = Service(executable_path="/usr/bin/chromedriver")
     options.binary_location = "/usr/bin/chromium"
-    return webdriver.Chrome(service=service, options=options)
-
-
-# ===== 精度改善用ユーティリティ =====
-def _normalize_host(url: str) -> str:
-    try:
-        p = urlparse(url)
-        host = (p.netloc or "").lower()
-        if host.startswith("www."):
-            host = host[4:]
-        return host
-    except:
-        return ""
-
-def _extract_real_url(href: str) -> str:
-    if not href:
-        return href
-    href = unquote(href)
-
-    if "search.yahoo.co.jp/r/" not in href:
-        return href
-
-    m = re.search(r"RU=([^/]+)", href)
-    if m:
-        cand = unquote(m.group(1))
-        if cand.startswith("http"):
-            return cand
-
-    try:
-        qs = parse_qs(urlparse(href).query)
-        for k in ("RU", "ru", "u", "url"):
-            if k in qs and qs[k]:
-                cand = unquote(qs[k][0])
-                if cand.startswith("http"):
-                    return cand
-    except:
-        pass
-
-    return href
-
-def _host_matches(host: str, domain_list: list[str]) -> bool:
-    for d in domain_list:
-        d = d.lower().lstrip(".")
-        if host == d or host.endswith("." + d):
-            return True
-    return False
-
-def _get_allintitle_count(driver) -> str:
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-    candidates = []
-    for sel in ["#main", "div#main", "div.contents"]:
-        try:
-            candidates.append(driver.find_element(By.CSS_SELECTOR, sel).text)
-        except:
-            pass
-
-    try:
-        candidates.append(driver.find_element(By.TAG_NAME, "body").text)
-    except:
-        pass
-
-    joined = "\n".join([c for c in candidates if c])
-
-    if "一致するウェブページは見つかりませんでした" in joined:
-        return "0"
-
-    m = re.search(r"約?\s*([\d,]+)\s*件", joined)
-    if m:
-        return m.group(1).replace(",", "")
-
-    m2 = re.search(r"([\d,]+)\s*件", joined)
-    if m2:
-        return m2.group(1).replace(",", "")
-
-    return "0"
-# ==============================
-
+    
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
 
 # --- 解析ロジック ---
 def analyze_yahoo(keyword, driver):
+    # 初期値
     result = {
-        "keyword": keyword,
-        "allintitle": "0",
-        "qa_flag": False,
+        "keyword": keyword, 
+        "allintitle": "0", 
+        "qa_flag": False, 
         "blog_flag": False,
         "debug_titles": []
     }
-
+    
     try:
-        wait = WebDriverWait(driver, 12)
+        # ---------------------------------------------------------
+        # 1. allintitle検索 (intitle:A intitle:B 方式)
+        # ---------------------------------------------------------
+        
+        # キーワードをスペースで分解して、それぞれに intitle: をつける
+        # 例: "消臭剤 併用" → "intitle:消臭剤 intitle:併用"
+        parts = keyword.replace("　", " ").split()
+        intitle_query = " ".join([f"intitle:{p}" for p in parts if p.strip()])
+        
+        # Yahoo検索へGO
+        driver.get(f"https://search.yahoo.co.jp/search?p={intitle_query}&n=10")
+        time.sleep(random.uniform(2.5, 4.0))
+        
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        
+        # 【判定A】「一致する情報は...」のメッセージがあれば 0件確定
+        if "一致する情報は" in body_text and "見つかりませんでした" in body_text:
+            result["allintitle"] = "0"
+            
+        else:
+            # 【判定B】「約 1件」などの数字を探す
+            # 画像の場所（ページ上部）にある数字を狙います
+            match = re.search(r'約\s*([\d,]+)\s*件', body_text)
+            if match:
+                result["allintitle"] = match.group(1).replace(',', '')
+            else:
+                # 「約」がない場合の数字（「1件」など）も探す
+                match_strict = re.search(r'([\d,]+)\s*件', body_text)
+                if match_strict:
+                    result["allintitle"] = match_strict.group(1).replace(',', '')
+                else:
+                    result["allintitle"] = "取得失敗"
 
-        # --- 1) allintitle検索（★ALLINTITLE_Nを使う） ---
-        driver.get(f'https://search.yahoo.co.jp/search?p=allintitle:"{keyword}"&n={ALLINTITLE_N}')
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
-
-        try:
-            result["allintitle"] = _get_allintitle_count(driver)
-        except:
-            result["allintitle"] = "取得失敗"
-
-        # --- 2) 通常検索（TopN） ---
+        # ---------------------------------------------------------
+        # 2. 通常検索（知恵袋・ブログ判定）
+        # ---------------------------------------------------------
         driver.get(f"https://search.yahoo.co.jp/search?p={keyword}&ei=UTF-8")
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
-
-        try:
-            main_area = driver.find_element(By.ID, "main")
-        except:
-            main_area = driver
-
+        time.sleep(random.uniform(2.5, 4.0))
+        
+        try: main_area = driver.find_element(By.ID, "main")
+        except: main_area = driver
+        
+        # 記事カードの取得
         cards = main_area.find_elements(By.CSS_SELECTOR, "div.sw-CardBase")
-        if not cards:
-            cards = main_area.find_elements(By.CSS_SELECTOR, "div.algo")
-
+        if len(cards) == 0: cards = main_area.find_elements(By.CSS_SELECTOR, "div.algo")
+        
         valid_count = 0
-
-                valid_count = 0
-
         for card in cards:
-            if valid_count >= TOP_N:
-                break
-
             try:
-                if not card.is_displayed():
+                if not card.is_displayed(): continue
+                
+                # リンクを探す
+                title_links = card.find_elements(By.CSS_SELECTOR, "a")
+                if not title_links: continue
+                
+                # 最もそれらしいリンクを採用
+                target_link = title_links[0]
+                # h3タグの中にあるリンクを優先する
+                h3_link = card.find_elements(By.CSS_SELECTOR, "h3 a")
+                if h3_link: target_link = h3_link[0]
+
+                url = unquote(target_link.get_attribute("href"))
+                text = card.text
+                
+                # 除外ドメイン
+                if "search.yahoo.co.jp" in url or "help.yahoo.co.jp" in url:
                     continue
 
-                card_text = (card.text or "")
+                if "http" in url:
+                    valid_count += 1
+                    
+                    # 知恵袋チェック
+                    if "chiebukuro.yahoo.co.jp" in url or "Yahoo!知恵袋" in text:
+                        result["qa_flag"] = True
+                    
+                    # ブログチェック
+                    for blog in BLOG_DOMAINS:
+                        if blog in url: result["blog_flag"] = True
+                    
+                    # ログ保存（確認用）
+                    result["debug_titles"].append(f"{valid_count}. {text[:15]}...")
+                    
+            except: continue
+            if valid_count >= 10: break
 
-                # 広告系除外
-                if "広告" in card_text or "スポンサー" in card_text or "Sponsored" in card_text:
-                    continue
+    except Exception as e:
+        result["allintitle"] = "エラー"
+        
+    return result
 
-                # タイトルリンク取得
-                try:
-                    title_link = card.find_element(By.CSS_SELECTOR, "h3 a")
-                except:
-                    try:
-                        title_link = card.find_element(By.CSS_SELECTOR, "a")
-                    except:
-                        continue
+# --- メイン画面 ---
+def main():
+    st.set_page_config(page_title="Yahoo分析ツール", layout="wide")
+    
+    # 簡易ログイン
+    if "auth" not in st.session_state: st.session_state.auth = False
+    if not st.session_state.auth:
+        st.title("🔐 ログイン")
+        u = st.text_input("User")
+        p = st.text_input("Pass", type="password")
+        if st.button("Login"):
+            if u == st.secrets["auth"]["username"] and p == st.secrets["auth"]["password"]:
+                st.session_state.auth = True
+                st.rerun()
+        return
 
-                raw_href = title_link.get_attribute("href")
-                title_text = (title_link.text or "").strip().replace("\n", "")
+    st.title("🔍 Yahoo! 徹底攻略ツール (完全再現版)")
+    st.info("intitle:A intitle:B 方式で正確な件数を取得します")
+    
+    raw_text = st.text_area("キーワード入力", height=200)
+    target_list = [line.strip() for line in raw_text.split('\n') if line.strip()]
 
-                if not raw_href:
-                    continue
+    if st.button("調査開始"):
+        if not target_list: return
+        
+        status = st.empty()
+        status.info("🚀 起動中...")
+        
+        try:
+            driver = get_driver()
+            results = []
+            bar = st.progress(0)
+            
+            for i, kw in enumerate(target_list):
+                status.info(f"🔎 調査中 ({i+1}/{len(target_list)}): {kw}")
+                data = analyze_yahoo(kw, driver)
+                results.append(data)
+                bar.progress((i + 1) / len(target_list))
+                time.sleep(2)
+            
+            status.success("完了！")
+            df = pd.DataFrame(results)
+            
+            # 見やすく整形
+            df['知恵袋'] = df['qa_flag'].apply(lambda x: 'あり' if x else '-')
+            df['無料ブログ'] = df['blog_flag'].apply(lambda x: 'あり' if x else '-')
+            
+            st.dataframe(
+                df[['keyword', 'allintitle', '知恵袋', '無料ブログ']],
+                use_container_width=True
+            )
+            
+        finally:
+            if 'driver' in locals(): driver.quit()
 
-                url = _extract_real_url(raw_href)
-                if not url.startswith("http"):
-                    continue
-
-                host = _normalize_host(url)
-
-                # 除外（hostベース）
-                if _host_matches(host, EXCLUDE_DOMAINS):
-                    continue
-
-                valid_count += 1
-
-                detected_qa = _host_matches(host, QA_DOMAINS) or ("Yahoo!知恵袋" in card_text)
-                detected_blog = _host_matches(host, BLOG_DOMAINS)
-
-                if detected_qa:
-                    result["qa_flag"] = True
-                if detected_blog:
-                    result["blog_flag"] = True
-
-                result["debug_titles"].append(
-                    f"【{valid_count}位】{title_text[:30]} ({host})"
-                )
-
-            except:
-                continue
-
-
-                raw_href = title_link.get_attribute("href")
-                title_text = (title_link.text or "").strip().replace("\n", "")
-                if not raw_href:
-                    continue
-
-                url = _extract_real_url(raw_href)
-                if not url.startswith("http"):
-                    continue
-
-                host = _normalize_host(url)
-
-                # ★除外は host ベース＋configのEXCLUDE_DOMAINSを使う
-                if _host_matches(host, EXCLUDE_DOMAINS):
-                    continue
-
-                valid_count += 1
-
-                detected_qa =_
+if __name__ == "__main__":
+    main()
